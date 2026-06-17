@@ -1,0 +1,25 @@
+# Security: Never commit API keys or environment secrets
+.env
+.env.local
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.history/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Streamlit specific overrides
+.streamlit/config.toml
+.streamlit/secrets.toml
+
+# Operating System files
+.DS_Store
+Thumbs.db
