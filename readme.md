@@ -1,32 +1,3 @@
-
-Claude finished the response
-
-can you turn this into actual markdown please? IT & Curriculum Desk Assistant An automated, full-stack AI-enabled triage dashboard built to streamline K-12 IT helpdesk operations and curriculum software provisioning. The application utilizes a multi-stage, two-component AI inference pipeline to
-
-pasted
-
-8:16 PM
-
-Ran a command, read a file
-Ran a command, read a file
-Done. The ASCII diagram is preserved in a fenced code block so it renders intact, headers are properly leveled, all the bash blocks are tagged for syntax highlighting, and the lists/bold are converted to real markdown.
-
-
-Readme
-Document · MD 
-
-Want to be notified when Claude responds?
-Claude Fable 5 is currently unavailable.
-Learn more(opens in new tab)
-
-
-
-
-
-Claude is AI and can make mistakes. Please double-check responses.
-
-
-Readme · MD
 # IT & Curriculum Desk Assistant
  
 An automated, full-stack AI-enabled triage dashboard built to streamline K-12 IT helpdesk operations and curriculum software provisioning. The application utilizes a multi-stage, two-component AI inference pipeline to ingest raw teacher support requests or cryptic error screenshots, match them against a local persistent knowledge base, and generate technical resolution runbooks alongside polished, jargon-free correspondence drafts.
