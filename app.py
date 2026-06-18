@@ -8,6 +8,8 @@ from PIL import Image
 from groq import Groq
 from dotenv import load_dotenv
 
+import core
+
 # --- 0. ENVIRONMENT & SECURITY SETUP ---
 load_dotenv()
 
@@ -20,28 +22,9 @@ def get_db_connection():
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
     return conn
 
-# Run database setup once at application startup
+# Run database setup once at application startup (create table + seed defaults)
 conn = get_db_connection()
-cursor = conn.cursor()
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS runbooks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        platform TEXT NOT NULL UNIQUE,
-        resolution_steps TEXT NOT NULL
-    )
-""")
-conn.commit()
-
-# Pre-seed default records ONLY if the database is completely empty
-cursor.execute("SELECT COUNT(*) FROM runbooks")
-if cursor.fetchone()[0] == 0:
-    default_records = [
-        ("Clever", "The student account lacks an active enrollment sync link mapping. Resolution: Open Clever Admin Console -> Nav to Sync Settings -> Run a Manual Delta Sync on the targeted Student ID record."),
-        ("Amplify", "Chronic browser session state cache conflict with federated Single Sign-On tokens. Resolution: Instruct the teacher to clear Chrome site cookies specifically for Amplify, or launch via a secure Incognito window."),
-        ("McGraw-Hill", "School building roster seat caps are maxed out. Resolution: Open District Curriculum Provisioning Suite, unassign inactive student records from the prior semester, and assign the seat allocation to the new user.")
-    ]
-    cursor.executemany("INSERT OR IGNORE INTO runbooks (platform, resolution_steps) VALUES (?, ?)", default_records)
-    conn.commit()
+core.init_db(conn)
 conn.close()
 
 # --- 2. APPLICATION INITIALIZATION ---
@@ -168,6 +151,22 @@ with col1:
     fallback_active = st.checkbox("Toggle Manual Text Fallback (If image fails/blurry)")
     manual_text = st.text_area("Paste manual details or errors directly here:", disabled=not fallback_active)
 
+# --- INPUT-CHANGE CACHE INVALIDATION ---
+# Regenerate vision + resolution whenever the actual intake input changes,
+# instead of reusing a stale result from a previous upload until the user
+# manually clicks "Reset Operational Workspace".
+screenshot_bytes = (
+    uploaded_screenshot.getvalue()
+    if uploaded_screenshot is not None and not fallback_active
+    else None
+)
+active_text = manual_text if fallback_active else None
+current_sig = core.input_signature(screenshot_bytes, active_text)
+if st.session_state.get("last_input_sig") != current_sig:
+    st.session_state.pop("cached_vision_metrics", None)
+    st.session_state.pop("cached_resolution_reports", None)
+    st.session_state["last_input_sig"] = current_sig
+
 # --- 5. VISION EXTRACTION LAYER ---
 parsed_metrics = None
 
@@ -231,52 +230,17 @@ if parsed_metrics:
             with st.spinner("Component 2: Scanning local SQLite repositories & generating runbooks..."):
                 try:
                     db_conn = get_db_connection()
-                    cursor = db_conn.cursor()
-                    search_platform = f"%{parsed_metrics.get('platform_name')}%"
-                    
-                    cursor.execute(
-                        "SELECT platform, resolution_steps FROM runbooks WHERE platform LIKE ?",
-                        (search_platform,)
-                    )
-                    matching_rows = cursor.fetchall()
+                    matching_rows = core.search_runbooks(db_conn, parsed_metrics.get("platform_name"))
                     db_conn.close()
-                    
-                    retrieved_context = ""
-                    if matching_rows:
-                        for row in matching_rows:
-                            retrieved_context += f"FOUND INTERNAL DOCUMENTATION OVERRIDE:\nPlatform: {row[0]}\nPolicy Steps: {row[1]}\n\n"
-                    else:
-                        retrieved_context = "NOTICE: No matching custom internal district support records located inside relational database indexes."
-                        
-                    generation_prompt = f"""
-                    You are a Senior K-12 District Enterprise System Support Specialist. Your function is to read incoming 
-                    error details, check our internal custom database record queries, and build localized resolution reports.
-                    
-                    CASE FILE FROM INTAKE SCREEN:
-                    - Platform Target: {parsed_metrics.get('platform_name')}
-                    - Visual Evidence Summary: {parsed_metrics.get('log_summary')}
-                    
-                    RETRIEVED INTERNAL DATABASE LOG DATA CONTEXT:
-                    \"\"\"
-                    {retrieved_context}
-                    \"\"\"
-                    
-                    If internal documentation is present, your runbook steps MUST align directly with that policy. If the database returned no records,
-                    synthesize a high-quality response based on curriculum support software patterns (SSO loops, cache clearing, browser cookie conflicts, rostering delays).
-                    
-                    You must return a valid JSON object matching this exact structure:
-                    {{
-                        "runbook_steps": "Numbered technical resolution checklist for the IT tech admin interface operations.",
-                        "teacher_email": "Empathetic, clear email message draft addressed to the teacher. State the solution in non-technical terms."
-                    }}
-                    """
-                    
-                    resolution_completion = client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
-                        messages=[{"role": "user", "content": generation_prompt}],
-                        response_format={"type": "json_object"}
+
+                    retrieved_context = core.build_retrieved_context(matching_rows)
+
+                    st.session_state.cached_resolution_reports = core.generate_resolution(
+                        client,
+                        platform_name=parsed_metrics.get("platform_name"),
+                        log_summary=parsed_metrics.get("log_summary"),
+                        context=retrieved_context,
                     )
-                    st.session_state.cached_resolution_reports = json.loads(resolution_completion.choices[0].message.content)
                 except Exception as ex:
                     st.error(f"Resolution Generation Error encountered: {ex}")
                     

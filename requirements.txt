@@ -1,0 +1,5 @@
+streamlit
+groq
+pillow
+python-dotenv
+pytest
